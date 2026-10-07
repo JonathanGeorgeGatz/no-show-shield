@@ -1,0 +1,502 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The No-Show Shield</title>
+<style>
+:root{--bg:#101318;--panel:#181D25;--line:#272E3A;--ink:#E8EBF0;--dim:#8C96A5;
+--blue:#3D7BFF;--coral:#E2654A;--mint:#3FBF8F;--gold:#D9A23B;
+--mono:"SF Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace;
+--sans:-apple-system,"Segoe UI",Inter,Helvetica,Arial,sans-serif}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 var(--sans);padding:26px 30px 60px}
+h1{font-size:24px;letter-spacing:-.01em}
+h1 small{color:var(--dim);font-weight:400;font-size:14px;margin-left:12px}
+.sub{color:var(--dim);margin:4px 0 18px;max-width:760px}
+#in textarea{width:100%;height:130px;background:var(--panel);color:var(--ink);
+border:1px solid var(--line);border-radius:10px;padding:12px;font:12.5px/1.45 var(--mono);resize:vertical}
+.row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin:12px 0 6px}
+.set{display:flex;flex-direction:column;gap:4px}
+.set label{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
+.set input{width:120px;background:var(--panel);border:1px solid var(--line);color:var(--ink);
+border-radius:8px;padding:8px 10px;font:14px var(--mono)}
+button{background:var(--blue);color:#fff;border:0;border-radius:9px;padding:11px 22px;
+font:600 15px var(--sans);cursor:pointer}
+button:hover{filter:brightness(1.1)}
+#status{color:var(--dim);margin:8px 0}
+#board{display:none}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:18px 0}
+.tile{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.tile .k{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+.tile .v{font-size:30px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums;margin-top:6px}
+.tile .d{font-size:12.5px;color:var(--dim);margin-top:4px}
+.tile.hot .v{color:var(--coral)}
+.tile.cool .v{color:var(--mint)}
+.grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:14px;margin-bottom:14px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px 18px}
+.panel h2{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--dim);margin-bottom:12px}
+canvas{width:100%;display:block}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);
+text-align:left;padding:0 10px 8px;font-weight:600}
+td{padding:7px 10px;border-top:1px solid var(--line);font-variant-numeric:tabular-nums}
+td.r,th.r{text-align:right}
+.money{font-family:var(--mono);font-size:13px}
+.hotc{color:var(--coral);font-weight:600}
+.okc{color:var(--mint)}
+#heat{display:grid;grid-template-columns:repeat(13,1fr);gap:3px;font-size:10px}
+#heat .hd{color:var(--dim);text-align:center;padding:2px 0}
+#heat .c{height:26px;border-radius:4px;background:#1E242E;position:relative}
+#heat .c span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+font-size:10.5px;color:var(--ink)}
+.badge{display:inline-block;background:#2A2330;color:var(--gold);border:1px solid #4A3A24;
+font-size:10px;letter-spacing:.12em;padding:2px 8px;border-radius:5px;vertical-align:middle;margin-left:10px}
+#recon{margin-top:14px;font:600 14px var(--mono)}
+#recon.ok{color:var(--mint)} #recon.badrec{color:var(--coral)}
+#badrows{color:var(--dim);font-size:12.5px;margin-top:8px}
+.note{color:var(--dim);font-size:12px;margin-top:10px}
+#policy .big{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+#policy .line{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);font-size:13.5px}
+#policy .line:first-of-type{border-top:0}
+</style></head><body>
+<h1>The No-Show Shield <small>paste your appointment export &middot; nothing leaves this page</small></h1>
+<p class="sub">What empty chairs actually cost — no-shows and late cancellations judged separately,
+re-filled slots credited back, the clients who keep doing it (next to what they spend), and what a
+deposit policy would have collected on your real history.</p>
+<div id="in">
+  <textarea id="csv" placeholder="Paste the appointment CSV export here (appt_id, client_name, client_email, service, staff, date, start, duration_min, price, status, booked_at, cancelled_at)"></textarea>
+  <div class="row">
+    <div class="set"><label>late-cancel window (h)</label><input id="s_lch" value="24"></div>
+    <div class="set"><label>deposit ($)</label><input id="s_dep" value="25"></div>
+    <div class="set"><label>deposit from price ($)</label><input id="s_dmin" value="60"></div>
+    <div class="set"><label>offender min visits</label><input id="s_minv" value="3"></div>
+    <div class="set"><label>as of</label><input id="s_asof" value=""></div>
+    <button id="go">Read my history</button>
+  </div>
+  <div id="status">Waiting for data.</div>
+</div>
+<div id="board">
+  <div class="tiles">
+    <div class="tile hot"><div class="k">True cost · last 90 days</div><div class="v" id="t_cost90"></div><div class="d" id="t_cost90d"></div></div>
+    <div class="tile hot"><div class="k">True cost · last 12 months</div><div class="v" id="t_cost12"></div><div class="d" id="t_cost12d"></div></div>
+    <div class="tile"><div class="k">No-shows · 12 m</div><div class="v" id="t_ns"></div><div class="d" id="t_nsd"></div></div>
+    <div class="tile cool"><div class="k">Credited back · re-filled slots</div><div class="v" id="t_refill"></div><div class="d" id="t_refilld"></div></div>
+  </div>
+  <div class="grid2">
+    <div class="panel"><h2>Cost by month</h2><canvas id="chart" height="190"></canvas></div>
+    <div class="panel"><h2>When it happens — missed per weekday &amp; hour · 12 m</h2><div id="heat"></div>
+      <div class="note" id="heatnote"></div></div>
+  </div>
+  <div class="grid2">
+    <div class="panel"><h2>Repeat offenders — with what they're worth</h2>
+      <table id="off"><thead><tr><th>client</th><th class="r">missed</th><th class="r">no-shows</th>
+      <th class="r">late cxl</th><th class="r">last missed</th><th class="r">12-m spend</th></tr></thead><tbody></tbody></table>
+      <div class="note">missed = no-show or late cancellation. A re-filled slot still counts as behaviour.</div></div>
+    <div class="panel"><h2>By service · 12 m</h2>
+      <table id="svc"><thead><tr><th>service</th><th class="r">booked</th><th class="r">missed</th><th class="r">lost</th></tr></thead><tbody></tbody></table>
+      <div class="panel" style="margin-top:14px;padding:14px" id="policy">
+        <h2>Deposit policy, run on your last 12 months <span class="badge">SIMULATED</span></h2>
+        <div class="big" id="p_rec"></div>
+        <div class="line"><span>forfeited deposits (no-show / late cancel)</span><b id="p_forf"></b></div>
+        <div class="line"><span>share of bookings asked for a deposit</span><b id="p_touch"></b></div>
+        <div class="line"><span>clean customers who'd feel it</span><b id="p_well"></b></div>
+        <div class="line"><span>of last year's true cost, recovered</span><b id="p_pct"></b></div>
+        <div class="note">Policy: deposit collected at booking for services at or over the threshold;
+        kept on a no-show or late cancellation, returned on a proper one. This is last year's
+        behaviour unchanged — a deposit's real job is changing it.</div>
+      </div></div>
+  </div>
+  <div id="recon"></div>
+  <div id="badrows"></div>
+</div>
+<script>
+/* The No-Show Shield — shipped engine (build 2, after prompts 2 and 3).
+   Pure: computeShield(rows, settings) -> result object. rows = array of raw
+   string records already split from CSV. No DOM, no network. */
+(function (root) {
+  "use strict";
+  function r2(x) { return Math.round((x + Number.EPSILON) * 100) / 100; }
+  function money(x) { return r2(x).toFixed(2); }
+  function parseDate(s) { // YYYY-MM-DD -> ms epoch (UTC midnight) or null
+    if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
+    var t = Date.parse(s + "T00:00:00Z");
+    return isNaN(t) ? null : t;
+  }
+  function parseDT(s) { // "YYYY-MM-DD HH:MM" or ISO-ish -> ms or null
+    if (!s) return null;
+    var m = String(s).trim().match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+    if (!m) return null;
+    var t = Date.parse(m[1] + "-" + m[2] + "-" + m[3] + "T" + m[4] + ":" + m[5] + ":00Z");
+    return isNaN(t) ? null : t;
+  }
+  function normStatus(raw) {
+    var s = String(raw == null ? "" : raw).toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (s === "completed") return "COMPLETED";
+    if (s === "noshow" || s === "ns") return "NO_SHOW";
+    if (s === "cancelled" || s === "canceled" || s === "cxl") return "CANCELLED";
+    return null;
+  }
+  var DAY = 86400000, HOUR = 3600000;
+
+  function computeShield(rows, settings) {
+    var S = settings || {};
+    var LCH = +S.late_cancel_hours > 0 ? +S.late_cancel_hours : 24;
+    var DEP = S.deposit_amount != null ? +S.deposit_amount : 25;
+    var DMIN = S.deposit_min_price != null ? +S.deposit_min_price : 60;
+    var MINV = S.min_visits != null ? +S.min_visits : 3;
+    var asOf = parseDate(S.as_of);
+    if (asOf == null) throw new Error("as_of required");
+
+    var bad = [], future = [], live = [];
+    rows.forEach(function (r) {
+      var st = normStatus(r.status);
+      var d = parseDate(r.date);
+      var startM = String(r.start || "").match(/^(\d{2}):(\d{2})$/);
+      var booked = parseDT(r.booked_at);
+      var dur = +r.duration_min;
+      var price = (r.price === "" || r.price == null) ? NaN : +r.price;
+      var reason = null;
+      if (st == null) reason = "unknown status “" + (r.status || "") + "”";
+      else if (d == null) reason = "bad date";
+      else if (!startM) reason = "bad start time";
+      else if (booked == null) reason = "bad booked_at";
+      else if (!(dur > 0)) reason = "bad duration";
+      else if (isNaN(price) || price < 0) reason = "bad price";
+      var cxl = parseDT(r.cancelled_at);
+      if (!reason && st === "CANCELLED" && cxl == null) reason = "cancelled with no cancelled_at";
+      if (reason) { bad.push({ appt_id: r.appt_id, reason: reason }); return; }
+      var startMs = d + (+startM[1]) * HOUR + (+startM[2]) * 60000;
+      var row = {
+        id: r.appt_id, name: r.client_name, email: r.client_email, service: r.service,
+        staff: r.staff, dateMs: d, startMs: startMs, endMs: startMs + dur * 60000,
+        dur: dur, price: price, st: st, booked: booked, cxl: cxl
+      };
+      if (d > asOf) { future.push(row); return; }
+      live.push(row);
+    });
+
+    // classification
+    live.forEach(function (r) {
+      if (r.st === "COMPLETED") r.bucket = "completed";
+      else if (r.st === "NO_SHOW") r.bucket = "no_show";
+      else {
+        var notice = (r.startMs - r.cxl) / HOUR;
+        r.bucket = notice < LCH ? "late_cancel" : "proper_cancel";
+      }
+    });
+
+    // refill: candidates by staff (everything except proper_cancel)
+    var byStaff = {};
+    live.forEach(function (r) {
+      if (r.bucket === "proper_cancel") return;
+      (byStaff[r.staff] = byStaff[r.staff] || []).push(r);
+    });
+    live.forEach(function (r) {
+      if (r.bucket !== "late_cancel") { r.refilled = false; return; }
+      r.refilled = false;
+      var cands = byStaff[r.staff] || [];
+      for (var i = 0; i < cands.length; i++) {
+        var c = cands[i];
+        if (c === r) continue;
+        if (!(c.booked > r.cxl)) continue;
+        var ov = Math.min(c.endMs, r.endMs) - Math.max(c.startMs, r.startMs);
+        if (ov >= (r.endMs - r.startMs) * 0.5) { r.refilled = true; break; }
+      }
+    });
+
+    function inWin(r, fromMs, toMs) { return r.dateMs >= fromMs && r.dateMs <= toMs; }
+    var w90from = asOf - 89 * DAY, w12from = asOf - 364 * DAY;
+    function ledger(fromMs) {
+      var L = { no_show_count: 0, no_show_loss: 0, late_cancel_count: 0, late_cancel_gross: 0,
+        refilled_count: 0, refill_credit: 0, completed_count: 0, completed_revenue: 0,
+        proper_cancel_count: 0 };
+      live.forEach(function (r) {
+        if (!inWin(r, fromMs, asOf)) return;
+        if (r.bucket === "no_show") { L.no_show_count++; L.no_show_loss += r.price; }
+        else if (r.bucket === "late_cancel") {
+          L.late_cancel_count++; L.late_cancel_gross += r.price;
+          if (r.refilled) { L.refilled_count++; L.refill_credit += r.price; }
+        } else if (r.bucket === "completed") { L.completed_count++; L.completed_revenue += r.price; }
+        else L.proper_cancel_count++;
+      });
+      L.no_show_loss = r2(L.no_show_loss); L.late_cancel_gross = r2(L.late_cancel_gross);
+      L.refill_credit = r2(L.refill_credit);
+      L.late_cancel_net = r2(L.late_cancel_gross - L.refill_credit);
+      L.true_cost = r2(L.no_show_loss + L.late_cancel_net);
+      L.completed_revenue = r2(L.completed_revenue);
+      return L;
+    }
+    var ledgers = { last_90: ledger(w90from), trail_12m: ledger(w12from), all: ledger(-8640000000000000) };
+
+    // monthly series
+    var months = {};
+    live.forEach(function (r) {
+      var mk = new Date(r.dateMs).toISOString().slice(0, 7);
+      var m = months[mk] = months[mk] || { month: mk, true_cost: 0, no_show_count: 0, late_cancel_count: 0, seen: 0 };
+      m.seen++;
+      if (r.bucket === "no_show") { m.true_cost += r.price; m.no_show_count++; }
+      else if (r.bucket === "late_cancel") { m.late_cancel_count++; if (!r.refilled) m.true_cost += r.price; }
+    });
+    var monthly = Object.keys(months).sort().map(function (k) {
+      var m = months[k];
+      return { month: m.month, true_cost: r2(m.true_cost), no_show_count: m.no_show_count, late_cancel_count: m.late_cancel_count };
+    });
+
+    // risk map + services (TRAIL_12M)
+    var cellMap = {}, svc = {};
+    live.forEach(function (r) {
+      if (!inWin(r, w12from, asOf)) return;
+      var s = svc[r.service] = svc[r.service] || { service: r.service, booked_count: 0, missed_count: 0, missed_loss: 0 };
+      s.booked_count++;
+      var missed = r.bucket === "no_show" || r.bucket === "late_cancel";
+      if (missed) {
+        s.missed_count++;
+        if (r.bucket === "no_show" || !r.refilled) s.missed_loss += r.price;
+        var wd = (new Date(r.startMs).getUTCDay() + 6) % 7; // 0=Mon
+        var hr = new Date(r.startMs).getUTCHours();
+        var ck = wd + "-" + hr;
+        cellMap[ck] = cellMap[ck] || { weekday: wd, hour: hr, missed: 0 };
+        cellMap[ck].missed++;
+      }
+    });
+    var risk = Object.keys(cellMap).sort(function (a, b) {
+      var A = cellMap[a], B = cellMap[b];
+      return A.weekday - B.weekday || A.hour - B.hour;
+    }).map(function (k) { return cellMap[k]; });
+    var services = Object.keys(svc).map(function (k) { var s = svc[k]; s.missed_loss = r2(s.missed_loss); return s; })
+      .sort(function (a, b) { return b.missed_loss - a.missed_loss || (a.service < b.service ? -1 : 1); });
+
+    // offenders
+    var byClient = {};
+    live.forEach(function (r) {
+      var c = byClient[r.email] = byClient[r.email] || { email: r.email, rows: [] };
+      c.rows.push(r);
+    });
+    var offenders = [];
+    Object.keys(byClient).forEach(function (em) {
+      var c = byClient[em], rows2 = c.rows;
+      if (rows2.length < MINV) return;
+      var missedRows = rows2.filter(function (r) { return r.bucket === "no_show" || r.bucket === "late_cancel"; });
+      if (missedRows.length < 2) return;
+      var latest = rows2.slice().sort(function (a, b) { return b.dateMs - a.dateMs || (a.id < b.id ? 1 : -1); })[0];
+      var rev12 = 0, visits = 0, ns = 0, lc = 0, lastMiss = 0;
+      rows2.forEach(function (r) {
+        if (r.bucket === "completed") { visits++; if (inWin(r, w12from, asOf)) rev12 += r.price; }
+        if (r.bucket === "no_show") ns++;
+        if (r.bucket === "late_cancel") lc++;
+        if ((r.bucket === "no_show" || r.bucket === "late_cancel") && r.dateMs > lastMiss) lastMiss = r.dateMs;
+      });
+      offenders.push({ client_name: latest.name, email: em, visits: visits,
+        missed_count: missedRows.length, no_show_count: ns, late_cancel_count: lc,
+        last_missed_date: new Date(lastMiss).toISOString().slice(0, 10),
+        revenue_12m: r2(rev12) });
+    });
+    offenders.sort(function (a, b) {
+      return b.missed_count - a.missed_count || b.revenue_12m - a.revenue_12m ||
+        (a.email < b.email ? -1 : 1);
+    });
+
+    // policy simulator (TRAIL_12M)
+    var q = { forfeits: 0, refunds_to_proper: 0, qualifying: 0, total: 0 };
+    var clientStat = {};
+    live.forEach(function (r) {
+      if (!inWin(r, w12from, asOf)) return;
+      q.total++;
+      var qual = r.price >= DMIN;
+      if (qual) q.qualifying++;
+      if (qual && (r.bucket === "no_show" || r.bucket === "late_cancel")) q.forfeits++;
+      if (qual && r.bucket === "proper_cancel") q.refunds_to_proper++;
+      var cs = clientStat[r.email] = clientStat[r.email] || { qualRows: 0, misses: 0 };
+      if (qual) cs.qualRows++;
+      if (r.bucket === "no_show" || r.bucket === "late_cancel") cs.misses++;
+    });
+    var wellBehaved = 0;
+    Object.keys(clientStat).forEach(function (em) {
+      var cs = clientStat[em];
+      if (cs.qualRows >= 1 && cs.misses === 0) wellBehaved++;
+    });
+    var recovered = r2(q.forfeits * DEP);
+    var cost12 = ledgers.trail_12m.true_cost;
+    var policy = {
+      forfeits: q.forfeits, recovered: recovered, refunds_to_proper: q.refunds_to_proper,
+      touched_share_pct: q.total ? r2(q.qualifying / q.total * 100) : 0,
+      well_behaved_touched: wellBehaved,
+      recovered_vs_cost_pct: cost12 > 0 ? r2(recovered / cost12 * 100) : 0
+    };
+
+    // reconciliation
+    var counts = { completed: 0, no_show: 0, late_cancel: 0, proper_cancel: 0 };
+    live.forEach(function (r) { counts[r.bucket]++; });
+    var sumMissPrice = 0;
+    live.forEach(function (r) { if (r.bucket === "no_show" || r.bucket === "late_cancel") sumMissPrice += r.price; });
+    var okA = counts.completed + counts.no_show + counts.late_cancel + counts.proper_cancel +
+      bad.length + future.length === rows.length;
+    var okB = Math.abs(r2(ledgers.all.no_show_loss + ledgers.all.late_cancel_gross) - r2(sumMissPrice)) < 0.005;
+    var okC = ledgers.all.refill_credit <= ledgers.all.late_cancel_gross + 1e-9;
+    var okD = offenders.every(function (o) { return o.no_show_count + o.late_cancel_count === o.missed_count; });
+    var recon = {
+      ok: okA && okB && okC && okD,
+      line: (okA && okB && okC && okD) ? "RECONCILED row-for-row" : "DO NOT TRUST THIS BOARD",
+      fail: okA ? (okB ? (okC ? (okD ? "" : "offender counts") : "refill credit") : "dollar tie") : "row count",
+      buckets: { completed: counts.completed, no_show: counts.no_show, late_cancel: counts.late_cancel,
+        proper_cancel: counts.proper_cancel, bad: bad.length, future: future.length, total: rows.length }
+    };
+
+    return { settings: { late_cancel_hours: LCH, deposit_amount: DEP, deposit_min_price: DMIN,
+        min_visits: MINV, as_of: S.as_of },
+      bad_rows: bad, ledgers: ledgers, monthly: monthly, risk: risk, services: services,
+      offenders: offenders, policy: policy, reconciliation: recon };
+  }
+
+  // canonical JSON for cross-implementation comparison
+  function canonical(res) {
+    function m(x) { return money(x); }
+    var L = {};
+    ["last_90", "trail_12m", "all"].forEach(function (w) {
+      var s = res.ledgers[w];
+      L[w] = { no_show_count: s.no_show_count, no_show_loss: m(s.no_show_loss),
+        late_cancel_count: s.late_cancel_count, late_cancel_gross: m(s.late_cancel_gross),
+        refilled_count: s.refilled_count, refill_credit: m(s.refill_credit),
+        late_cancel_net: m(s.late_cancel_net), true_cost: m(s.true_cost),
+        completed_count: s.completed_count, completed_revenue: m(s.completed_revenue),
+        proper_cancel_count: s.proper_cancel_count };
+    });
+    return {
+      bad_rows: res.bad_rows.map(function (b) { return b.appt_id + "|" + b.reason; }),
+      ledgers: L,
+      monthly: res.monthly.map(function (x) { return x.month + "|" + m(x.true_cost) + "|" + x.no_show_count + "|" + x.late_cancel_count; }),
+      risk: res.risk.map(function (c) { return c.weekday + "-" + c.hour + "|" + c.missed; }),
+      services: res.services.map(function (s) { return s.service + "|" + s.booked_count + "|" + s.missed_count + "|" + m(s.missed_loss); }),
+      offenders: res.offenders.map(function (o) {
+        return [o.client_name, o.email, o.visits, o.missed_count, o.no_show_count, o.late_cancel_count, o.last_missed_date, m(o.revenue_12m)].join("|");
+      }),
+      policy: { forfeits: res.policy.forfeits, recovered: m(res.policy.recovered),
+        refunds_to_proper: res.policy.refunds_to_proper,
+        touched_share_pct: res.policy.touched_share_pct.toFixed(2),
+        well_behaved_touched: res.policy.well_behaved_touched,
+        recovered_vs_cost_pct: res.policy.recovered_vs_cost_pct.toFixed(2) },
+      reconciliation: { ok: res.reconciliation.ok, buckets: res.reconciliation.buckets }
+    };
+  }
+
+  var API = { computeShield: computeShield, canonical: canonical, _norm: normStatus };
+  if (typeof module !== "undefined" && module.exports) module.exports = API;
+  root.NSS = API;
+})(typeof window !== "undefined" ? window : globalThis);
+
+</script>
+<script>
+var $=function(id){return document.getElementById(id)};
+function parseCSV(text){
+  var lines=text.replace(/\r/g,"").split("\n").filter(function(l){return l.length});
+  function pl(l){var out=[],cur="",q=false;
+    for(var i=0;i<l.length;i++){var c=l[i];
+      if(q){if(c==='"'){if(l[i+1]==='"'){cur+='"';i++;}else q=false;}else cur+=c;}
+      else if(c==='"')q=true;else if(c===","){out.push(cur);cur="";}else cur+=c;}
+    out.push(cur);return out;}
+  var head=pl(lines[0]);
+  return lines.slice(1).map(function(l){var v=pl(l),o={};head.forEach(function(h,i){o[h]=v[i]});return o;});
+}
+function fm(x){return "$"+Number(x).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
+var LAST=null;
+function run(){
+  var txt=$("csv").value;
+  if(!txt.trim()){$("status").textContent="Paste the export first.";return;}
+  var rows;
+  try{rows=parseCSV(txt);}catch(e){$("status").textContent="Could not read that as CSV.";window.__error="parse";return;}
+  var S={late_cancel_hours:+$("s_lch").value||24,deposit_amount:+$("s_dep").value||25,
+    deposit_min_price:+$("s_dmin").value||60,min_visits:+$("s_minv").value||3,
+    as_of:$("s_asof").value||new Date().toISOString().slice(0,10)};
+  var res;
+  try{res=NSS.computeShield(rows,S);}catch(e){$("status").textContent="Could not compute: "+e.message;window.__error="compute";return;}
+  LAST=res;window.__result=res;
+  render(res);
+  $("status").textContent=rows.length+" rows read.";
+  window.__done=true;
+}
+function render(res){
+  $("board").style.display="block";
+  var L90=res.ledgers.last_90,L12=res.ledgers.trail_12m;
+  $("t_cost90").textContent=fm(L90.true_cost);
+  $("t_cost90d").textContent=L90.no_show_count+" no-shows + "+L90.late_cancel_count+" late cancels, re-fills credited";
+  $("t_cost12").textContent=fm(L12.true_cost);
+  $("t_cost12d").textContent=fm(L12.no_show_loss)+" no-shows · "+fm(L12.late_cancel_net)+" late cancels (net)";
+  $("t_ns").textContent=L12.no_show_count;
+  $("t_nsd").textContent=L12.late_cancel_count+" late cancellations · "+L12.proper_cancel_count+" proper ones (free)";
+  $("t_refill").textContent=fm(L12.refill_credit);
+  $("t_refilld").textContent=L12.refilled_count+" vacated slots re-booked in time";
+  // chart
+  var cv=$("chart"),ctx=cv.getContext("2d");
+  var W=cv.width=cv.clientWidth*2,H=cv.height=380;cv.style.height="190px";
+  ctx.clearRect(0,0,W,H);
+  var ms=res.monthly,mx=Math.max.apply(null,ms.map(function(m){return m.true_cost}).concat([1]));
+  var bw=W/ms.length;
+  ms.forEach(function(m,i){
+    var h=Math.round((H-56)*m.true_cost/mx);
+    ctx.fillStyle="#E2654A";
+    ctx.fillRect(i*bw+bw*0.18,H-30-h,bw*0.64,h);
+    ctx.fillStyle="#8C96A5";ctx.font="19px "+getComputedStyle(document.body).getPropertyValue("--sans");
+    ctx.textAlign="center";
+    ctx.fillText(m.month.slice(2).replace("-","·"),i*bw+bw/2,H-8);
+    ctx.fillStyle="#E8EBF0";ctx.font="18px Menlo";
+    if(m.true_cost>0)ctx.fillText("$"+Math.round(m.true_cost),i*bw+bw/2,H-40-h);
+  });
+  // heat
+  var days=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  var hours=[];for(var h=7;h<19;h++)hours.push(h);
+  var map={};res.risk.forEach(function(c){map[c.weekday+"-"+c.hour]=c.missed});
+  var hx=Math.max.apply(null,res.risk.map(function(c){return c.missed}).concat([1]));
+  var el=$("heat");el.innerHTML="";
+  el.appendChild(document.createElement("div"));
+  hours.forEach(function(h){var d=document.createElement("div");d.className="hd";d.textContent=h;el.appendChild(d)});
+  days.forEach(function(dn,di){
+    var lab=document.createElement("div");lab.className="hd";lab.textContent=dn;el.appendChild(lab);
+    hours.forEach(function(h){
+      var v=map[di+"-"+h]||0,c=document.createElement("div");c.className="c";
+      if(v){var a=0.18+0.82*v/hx;c.style.background="rgba(226,101,74,"+a.toFixed(2)+")";
+        var s=document.createElement("span");s.textContent=v;c.appendChild(s);}
+      el.appendChild(c);
+    });
+  });
+  var top=res.risk.slice().sort(function(a,b){return b.missed-a.missed})[0];
+  $("heatnote").textContent=top?("worst slot: "+days[top.weekday]+" "+top.hour+":00 — "+top.missed+" missed in 12 months"):"";
+  // offenders
+  var tb=$("off").querySelector("tbody");tb.innerHTML="";
+  res.offenders.slice(0,8).forEach(function(o){
+    var tr=document.createElement("tr");
+    tr.innerHTML="<td>"+o.client_name+"</td><td class='r hotc'>"+o.missed_count+"</td><td class='r'>"+
+      o.no_show_count+"</td><td class='r'>"+o.late_cancel_count+"</td><td class='r'>"+o.last_missed_date+
+      "</td><td class='r money'>"+fm(o.revenue_12m)+"</td>";
+    tb.appendChild(tr);
+  });
+  if(res.offenders.length>8){
+    var tr=document.createElement("tr");
+    tr.innerHTML="<td colspan='6' style='color:var(--dim)'>showing 8 of "+res.offenders.length+"</td>";
+    tb.appendChild(tr);
+  }
+  // services
+  var sb=$("svc").querySelector("tbody");sb.innerHTML="";
+  res.services.forEach(function(s){
+    var tr=document.createElement("tr");
+    tr.innerHTML="<td>"+s.service+"</td><td class='r'>"+s.booked_count+"</td><td class='r'>"+
+      s.missed_count+"</td><td class='r money'>"+fm(s.missed_loss)+"</td>";
+    sb.appendChild(tr);
+  });
+  // policy
+  $("p_rec").textContent=fm(res.policy.recovered)+" collected";
+  $("p_forf").textContent=res.policy.forfeits;
+  $("p_touch").textContent=res.policy.touched_share_pct.toFixed(2)+"%";
+  $("p_well").textContent=res.policy.well_behaved_touched;
+  $("p_pct").textContent=res.policy.recovered_vs_cost_pct.toFixed(2)+"%";
+  // recon + bad
+  var rc=$("recon");rc.textContent=res.reconciliation.line+"  ·  "+
+    res.reconciliation.buckets.completed+" completed / "+res.reconciliation.buckets.no_show+" no-show / "+
+    res.reconciliation.buckets.late_cancel+" late cancel / "+res.reconciliation.buckets.proper_cancel+
+    " proper / "+res.reconciliation.buckets.bad+" refused / "+res.reconciliation.buckets.future+
+    " future = "+res.reconciliation.buckets.total+" rows";
+  rc.className=res.reconciliation.ok?"ok":"badrec";
+  $("badrows").textContent=res.bad_rows.length?("refused rows: "+res.bad_rows.map(function(b){return b.appt_id+" ("+b.reason+")"}).join(" · ")):"";
+}
+$("go").onclick=run;
+window.NSSUI={run:run,set:function(k,v){$(k).value=v},render:render};
+window.__loaded=true;
+</script></body></html>
